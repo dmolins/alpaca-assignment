@@ -1,0 +1,53 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    description: >
+      Untouched Binance BTC/USDT 1-second kline data, loaded as-is from the
+      source CSVs (already pre-filtered to :00/:59 second rows for this
+      submission).
+    tables:
+      - name: btc_ticks
+        description: One row per second (filtered to :00/:59 only for this run).
+        columns:
+          - name: open_time
+            description: UTC timestamp of the start of this 1-second candle.
+            data_tests:
+              - not_null
+          - name: open
+            description: Price at the start of the second.
+            data_tests:
+              - not_null
+          - name: close
+            description: Price at the end of the second.
+            data_tests:
+              - not_null
+
+models:
+  - name: stg_btc_ticks
+    description: >
+      Typed, deduplicated view over raw.btc_ticks. Adds the calendar `date`,
+      `hour` (0-23, UTC) and `second` fields derived from open_time, and
+      excludes 2017-08-17 (partial day — data starts at 04:00:28, so hours
+      0-3 have no rows that day).
+    columns:
+      - name: open_time
+        data_tests:
+          - unique
+          - not_null
+      - name: date
+        data_tests:
+          - not_null
+      - name: hour
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+      - name: second
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 59]

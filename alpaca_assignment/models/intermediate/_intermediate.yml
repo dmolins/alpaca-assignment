@@ -1,0 +1,41 @@
+version: 2
+
+models:
+  - name: int_hourly_prices
+    description: >
+      One row per (date, hour) with the buy price (open @ :00) and sell price
+      (close @ :59).
+    columns:
+      - name: date
+        data_tests:
+          - not_null
+      - name: hour
+        data_tests:
+          - not_null
+      - name: buy_price
+        data_tests:
+          - not_null
+      - name: sell_price
+        data_tests:
+          - not_null
+
+  - name: int_hourly_returns
+    description: Adds the simple return `sell_price / buy_price - 1` per (date, hour).
+    columns:
+      - name: hourly_return
+        data_tests:
+          - not_null
+
+  - name: int_hourly_equity_curve
+    description: >
+      Compounded equity curve per hour-of-day, across all days ordered by
+      date (equity_t = equity_{t-1} * (1 + r_t)), plus the running max of
+      that curve — the two ingredients max drawdown is built
+      from in the marts layer.
+    columns:
+      - name: equity
+        data_tests:
+          - not_null
+      - name: running_max_equity
+        data_tests:
+          - not_null

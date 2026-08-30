@@ -1,0 +1,40 @@
+version: 2
+
+models:
+  - name: mart_daily_hourly_performance
+    description: >
+      One row per (date, hour): buy/sell price, that day's hourly return,
+      the compounded equity curve value and running max for that hour's
+      series, and the resulting drawdown. Not pre-aggregated to hour-of-day
+      — see the model SQL for why keeping this grain matters. The two
+      questions the prompt asks are answered by rolling this table up in
+      analyses/answer_biggest_return_hour.sql and
+      analyses/answer_lowest_drawdown_hour.sql.
+    columns:
+      - name: date
+        data_tests:
+          - not_null
+      - name: hour
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+      - name: buy_price
+        data_tests:
+          - not_null
+      - name: sell_price
+        data_tests:
+          - not_null
+      - name: hourly_return
+        data_tests:
+          - not_null
+      - name: equity
+        data_tests:
+          - not_null
+      - name: running_max_equity
+        data_tests:
+          - not_null
+      - name: drawdown
+        data_tests:
+          - not_null

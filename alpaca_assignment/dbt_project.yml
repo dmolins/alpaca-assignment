@@ -31,6 +31,14 @@ clean-targets:         # directories to be removed by `dbt clean`
 # files using the `{{ config(...) }}` macro.
 models:
   alpaca_assignment:
-    # Config indicated by + and applies to all files under models/example/
-    example:
-      +materialized: view
+    staging:
+      # Materialized as a table, not the more typical view: this dataset is tiny
+      # (123K rows) and Postgres badly under-estimated row counts when this was a view
+      # stacked under further views/CTEs, picking a nested-loop join downstream that
+      # turned a sub-second query into a 20+ minute one. A real table gives every
+      # downstream model accurate ANALYZE stats to plan against. 
+      +materialized: table
+    intermediate:
+      +materialized: table
+    marts:
+      +materialized: table
