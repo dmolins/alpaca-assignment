@@ -10,13 +10,7 @@ equity_curve as (
 
 )
 
--- Grain: one row per (date, hour) — not pre-aggregated up to hour-of-day. Keeping the
--- daily dimension here, rather than collapsing it away like an earlier version of this
--- mart did, is what lets this table answer questions beyond the prompt's two: weekday
--- vs. weekend performance by hour, a rolling trend for one specific hour over time,
--- year-over-year comparisons, etc. — all just a different GROUP BY/WHERE against this
--- same table, with no new model needed. The hour-of-day rollups the prompt actually asks
--- for live in analyses/, computed from this table, not baked into its grain.
+-- Grain: one row per (date, hour)
 select
     returns.date,
     returns.hour,

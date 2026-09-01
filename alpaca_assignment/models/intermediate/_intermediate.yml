@@ -4,14 +4,10 @@ models:
   - name: int_hourly_prices
     description: >
       One row per (date, hour) with the buy price (open @ :00) and sell price
-      (close @ :59).
+      (close @ :59). date/hour are group-by keys straight from stg_btc_ticks
+      (already tested there), so only the newly-computed columns are tested
+      again here.
     columns:
-      - name: date
-        data_tests:
-          - not_null
-      - name: hour
-        data_tests:
-          - not_null
       - name: buy_price
         data_tests:
           - not_null
@@ -31,11 +27,10 @@ models:
       Compounded equity curve per hour-of-day, across all days ordered by
       date (equity_t = equity_{t-1} * (1 + r_t)), plus the running max of
       that curve — the two ingredients max drawdown is built
-      from in the marts layer.
+      from in the marts layer. running_max_equity isn't separately tested:
+      it's a max() over equity in the same query, so it can't be null once
+      equity isn't.
     columns:
       - name: equity
-        data_tests:
-          - not_null
-      - name: running_max_equity
         data_tests:
           - not_null

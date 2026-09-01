@@ -42,9 +42,8 @@ deduped as (
 select *
 from deduped
 -- Defensive filter, not just documentation: the loader for this submission already
--- pre-filters to :00/:59 rows (NOTES.md §4.2), so this is a no-op today. But it makes
--- this model correct on its own if `raw.btc_ticks` is ever swapped for the full,
--- unfiltered load (the production alternative also described in §4.2) without needing
--- to touch this file.
+-- pre-filters to :00/:59 rows, so this is a no-op today. But it makes this model correct
+-- on its own if `raw.btc_ticks` is ever swapped for a full, unfiltered load instead,
+-- without needing to touch this file.
 where second in (0, 59)
   and date > date '2017-08-17'  -- partial day: first row is 04:00:28, hours 0-3 missing
