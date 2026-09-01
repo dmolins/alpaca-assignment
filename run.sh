@@ -35,7 +35,7 @@ for f in "$HALF1" "$HALF2"; do
   [ -f "$f" ] || { echo "Missing data file: $f (set DATA_DIR to point at the CSVs)." >&2; exit 1; }
 done
 
-postgres_reachable() { (exec 3<>"/dev/tcp/${PGHOST}/${PGPORT}") 2>/dev/null; }
+postgres_port_open() { (exec 3<>"/dev/tcp/${PGHOST}/${PGPORT}") 2>/dev/null; }
 
 # Find a local Postgres client+server install (psql/initdb/pg_ctl always ship together),
 # whether or not it's on PATH — used both to talk to Postgres and, if Docker isn't
@@ -58,9 +58,29 @@ find_pg_bin() {
 }
 PG_BIN="$(find_pg_bin || true)"
 
+# A real connectivity check against PGUSER, not just "is the port open" — a different
+# Postgres instance (e.g. an already-running local dev cluster under a different role)
+# can easily be squatting on the same port with incompatible credentials.
+postgres_usable() {
+  if [ -n "$PG_BIN" ]; then
+    PGPASSWORD="$PGPASSWORD" "$PG_BIN/psql" -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d postgres -c "SELECT 1" >/dev/null 2>&1
+  else
+    postgres_port_open
+  fi
+}
+
 HAVE_DOCKER=false
-if postgres_reachable; then
-  log "Postgres already reachable at ${PGHOST}:${PGPORT} — reusing it"
+if postgres_port_open; then
+  if postgres_usable; then
+    log "Postgres already reachable at ${PGHOST}:${PGPORT} — reusing it"
+  else
+    echo "A Postgres server is already listening on ${PGHOST}:${PGPORT}, but connecting as" >&2
+    echo "PGUSER='$PGUSER' failed. This is a different instance than the one run.sh expects" >&2
+    echo "by default (matching docker-compose.yml). Either:" >&2
+    echo "  - point PGUSER/PGPASSWORD/PGDATABASE at that instance's real credentials, or" >&2
+    echo "  - stop it, or set PGPORT to a free port, so run.sh can start its own instance." >&2
+    exit 1
+  fi
 elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
   HAVE_DOCKER=true
   log "Starting Postgres via Docker Compose"
@@ -74,8 +94,8 @@ elif [ -n "$PG_BIN" ] && { [ "$PGHOST" = "localhost" ] || [ "$PGHOST" = "127.0.0
   [ -d "$PGDATA_DIR" ] || "$PG_BIN/initdb" -D "$PGDATA_DIR" -U "$PGUSER" --auth=trust --encoding=UTF8 --locale=C >/dev/null
   "$PG_BIN/pg_ctl" -D "$PGDATA_DIR" status >/dev/null 2>&1 || \
     "$PG_BIN/pg_ctl" -D "$PGDATA_DIR" -o "-p $PGPORT" -l "$PGDATA_DIR/server.log" start
-  for _ in $(seq 1 30); do postgres_reachable && break; sleep 1; done
-  postgres_reachable || { echo "Local Postgres didn't come up — check $PGDATA_DIR/server.log" >&2; exit 1; }
+  for _ in $(seq 1 30); do postgres_port_open && break; sleep 1; done
+  postgres_port_open || { echo "Local Postgres didn't come up — check $PGDATA_DIR/server.log" >&2; exit 1; }
   "$PG_BIN/psql" -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d postgres -tAc \
     "SELECT 1 FROM pg_database WHERE datname = '$PGDATABASE'" | grep -q 1 || \
     "$PG_BIN/psql" -h "$PGHOST" -p "$PGPORT" -U "$PGUSER" -d postgres -c "CREATE DATABASE $PGDATABASE" >/dev/null
