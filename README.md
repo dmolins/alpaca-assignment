@@ -26,6 +26,11 @@ otherwise sets up its own virtualenv with `python3`. Safe to re-run.
 magnitude of all 24 hours) — by a real margin over the runner-up on each metric (21:00 on  
 return, 11:00 on drawdown).
 
+![All 24 hours — return and drawdown, colored red (worst) to green (best)](hourly_summary.png)
+
+`./run.sh` regenerates this chart every run (final step, `matplotlib`) — the image above  
+is checked in as a snapshot of it, since the source data is fixed.
+
 ## Project layout
 
 ```

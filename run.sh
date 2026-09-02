@@ -115,19 +115,27 @@ else
   exit 1
 fi
 
-# dbt: use one already on PATH if there is one (e.g. installed via pipx); otherwise set
-# up a throwaway virtualenv with python3. Either way works — python3 is not required if
-# dbt is already installed some other way.
-if command -v dbt >/dev/null 2>&1; then
-  log "Using dbt already on PATH ($(command -v dbt))"
-  run_dbt() { dbt "$@"; }
-elif command -v python3 >/dev/null 2>&1; then
-  log "Setting up a Python virtualenv for dbt"
+# Shared virtualenv setup (dbt-postgres + matplotlib, see requirements.txt) — used by the
+# dbt step below if dbt isn't already installed some other way, and always used by the
+# chart step at the end, since that needs matplotlib regardless.
+ensure_venv() {
   [ -d .venv ] || python3 -m venv .venv
   # shellcheck source=/dev/null
   source .venv/bin/activate
   pip install --quiet --upgrade pip
   pip install --quiet -r requirements.txt
+}
+
+# dbt: use one already on PATH if there is one (e.g. installed via pipx); otherwise set
+# up a throwaway virtualenv with python3. Either way works — python3 is not required for
+# this step if dbt is already installed some other way (it's still needed later for the
+# chart, but that degrades gracefully — see the end of the script).
+if command -v dbt >/dev/null 2>&1; then
+  log "Using dbt already on PATH ($(command -v dbt))"
+  run_dbt() { dbt "$@"; }
+elif command -v python3 >/dev/null 2>&1; then
+  log "Setting up a Python virtualenv for dbt"
+  ensure_venv
   run_dbt() { dbt "$@"; }
 else
   echo "Need either 'dbt' on PATH or python3 (to install it into a virtualenv)." >&2
@@ -191,38 +199,80 @@ run_psql < alpaca_assignment/target/compiled/alpaca_assignment/analyses/answer_l
 log "Compiling the hourly summary"
 (cd alpaca_assignment && run_dbt compile --quiet --select hourly_summary)
 
-echo
-echo "############################################################"
-echo "# All 24 hours — return and drawdown (green = best, red = worst)"
-echo "############################################################"
-run_psql -t -A -F',' < alpaca_assignment/target/compiled/alpaca_assignment/analyses/hourly_summary.sql | awk '
-BEGIN { FS = ","; RESET = "\033[0m" }
-{
-    hour[NR] = $1; ret[NR] = $2; dd[NR] = $3
-    if (NR == 1 || $2 + 0 < minret) minret = $2 + 0
-    if (NR == 1 || $2 + 0 > maxret) { maxret = $2 + 0; bestret = NR }
-    if (NR == 1 || $3 + 0 < mindd)  mindd  = $3 + 0
-    if (NR == 1 || $3 + 0 > maxdd)  { maxdd  = $3 + 0; bestdd  = NR }
-    n = NR
-}
-function color(t,   r, g) {
-    if (t < 0) t = 0
-    if (t > 1) t = 1
-    if (t < 0.5) { r = 255; g = int(510 * t) }
-    else         { r = int(510 * (1 - t)); g = 255 }
-    return sprintf("\033[38;2;%d;%d;0m", r, g)
-}
-END {
-    printf "%-6s %14s %16s\n", "Hour", "Return", "Max Drawdown"
-    for (i = 1; i <= n; i++) {
-        tr = (maxret == minret) ? 1 : (ret[i] - minret) / (maxret - minret)
-        td = (maxdd  == mindd)  ? 1 : (dd[i]  - mindd)  / (maxdd  - mindd)
-        printf "%-6s %s%13.1f%%%s %s%15.1f%%%s\n", \
-            sprintf("%02d:00", hour[i]), \
-            color(tr), ret[i] * 100, RESET, \
-            color(td), dd[i] * 100, RESET
-    }
-    printf "\nBest return:   %02d:00 (%+.1f%%)\n", hour[bestret], ret[bestret] * 100
-    printf "Best drawdown: %02d:00 (%+.1f%%)\n", hour[bestdd], dd[bestdd] * 100
-}
-'
+CHART_PATH="$SCRIPT_DIR/hourly_summary.png"
+if command -v python3 >/dev/null 2>&1; then
+  log "Generating the hourly performance chart"
+  ensure_venv
+  run_psql --csv < alpaca_assignment/target/compiled/alpaca_assignment/analyses/hourly_summary.sql > "$FILTER_DIR/hourly_summary.csv"
+
+  python3 - "$FILTER_DIR/hourly_summary.csv" "$CHART_PATH" <<'PY'
+import csv
+import sys
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib.cm import RdYlGn
+from matplotlib.colors import Normalize
+
+csv_path, png_path = sys.argv[1], sys.argv[2]
+
+rows = []
+with open(csv_path) as f:
+    for row in csv.DictReader(f):
+        rows.append((
+            int(row["hour"]),
+            float(row["total_compounded_return"]) * 100,
+            float(row["max_drawdown"]) * 100,
+        ))
+rows.sort(key=lambda r: r[0])
+
+labels = [f"{h:02d}:00" for h, _, _ in rows]
+returns = [r for _, r, _ in rows]
+drawdowns = [d for _, _, d in rows]
+
+fig, axes = plt.subplots(2, 1, figsize=(13, 9), sharex=True)
+fig.suptitle(
+    "BTC hour-of-day performance — buy at :00, sell at :59 (2017–2024)",
+    fontsize=14, fontweight="bold",
+)
+
+def panel(ax, values, title, ylabel):
+    norm = Normalize(vmin=min(values), vmax=max(values))
+    colors = [RdYlGn(norm(v)) for v in values]
+    bars = ax.bar(labels, values, color=colors, edgecolor="#333333", linewidth=0.6)
+    best_i = values.index(max(values))
+    bars[best_i].set_edgecolor("black")
+    bars[best_i].set_linewidth(2.5)
+    for bar, v in zip(bars, values):
+        ax.annotate(
+            f"{v:+.0f}%", xy=(bar.get_x() + bar.get_width() / 2, v),
+            xytext=(0, 3 if v >= 0 else -12), textcoords="offset points",
+            ha="center", fontsize=7,
+        )
+    ax.axhline(0, color="black", linewidth=0.8)
+    ax.set_title(title, fontsize=11)
+    ax.set_ylabel(ylabel)
+    ax.margins(y=0.15)
+
+panel(axes[0], returns, "Total compounded return by hour", "Return (%)")
+panel(axes[1], drawdowns, "Max drawdown by hour", "Drawdown (%)")
+
+plt.xticks(rotation=45, ha="right")
+plt.xlabel("Hour of day (UTC)")
+plt.tight_layout()
+plt.savefig(png_path, dpi=150)
+print(f"Saved {png_path}")
+PY
+
+  echo
+  echo "############################################################"
+  echo "# Chart: $CHART_PATH"
+  echo "############################################################"
+  # Best-effort auto-open — fine if neither exists, the path above is enough either way.
+  { command -v open >/dev/null 2>&1 && open "$CHART_PATH"; } || \
+  { command -v xdg-open >/dev/null 2>&1 && xdg-open "$CHART_PATH"; } || true
+else
+  echo
+  echo "python3 not found — skipping the hourly performance chart (the answers above are unaffected)." >&2
+fi
