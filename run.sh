@@ -159,7 +159,12 @@ echo "    $row_count rows after filtering"
 log "Loading raw.btc_ticks"
 run_psql <<'SQL'
 CREATE SCHEMA IF NOT EXISTS raw;
-DROP TABLE IF EXISTS raw.btc_ticks;
+-- CASCADE: staging/intermediate dbt models are views (dbt_project.yml), so on a re-run
+-- stg_btc_ticks (and int_hourly_coverage, built on it) already exist as live dependents
+-- of this table - unlike the old table-materialized versions, which were independent
+-- copies with nothing to block this DROP. The very next step (dbt build) recreates all
+-- of them from scratch regardless, so dropping them here too is harmless.
+DROP TABLE IF EXISTS raw.btc_ticks CASCADE;
 CREATE TABLE raw.btc_ticks (
     open_time                    timestamp NOT NULL,
     open                         numeric NOT NULL,

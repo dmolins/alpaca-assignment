@@ -32,13 +32,11 @@ clean-targets:         # directories to be removed by `dbt clean`
 models:
   alpaca_assignment:
     staging:
-      # Materialized as a table, not the more typical view: this dataset is tiny
-      # (123K rows) and Postgres badly under-estimated row counts when this was a view
-      # stacked under further views/CTEs, picking a nested-loop join downstream that
-      # turned a sub-second query into a 20+ minute one. A real table gives every
-      # downstream model accurate ANALYZE stats to plan against. 
-      +materialized: table
+      # Conventional dbt materialization: staging/intermediate as views (cheap, always
+      # reflect the latest raw data, no storage cost), marts as tables (queried
+      # repeatedly downstream, worth paying to persist).
+      +materialized: view
     intermediate:
-      +materialized: table
+      +materialized: view
     marts:
       +materialized: table

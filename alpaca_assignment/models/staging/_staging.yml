@@ -28,9 +28,11 @@ models:
   - name: stg_btc_ticks
     description: >
       Typed, deduplicated view over raw.btc_ticks. Adds the calendar `date`,
-      `hour` (0-23, UTC) and `second` fields derived from open_time, and
-      excludes 2017-08-17 (partial day — data starts at 04:00:28, so hours
-      0-3 have no rows that day).
+      `hour` (0-23, UTC) and `second` fields derived from open_time. Does not
+      itself exclude any date or hour on data-completeness grounds — gaps
+      (including the partial first day, 2017-08-17, where data starts at
+      04:00:28) are detected generically downstream by `int_hourly_coverage`
+      and excluded from `int_hourly_prices` there, not hardcoded here.
     columns:
       - name: open_time
         data_tests:

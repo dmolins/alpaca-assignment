@@ -46,4 +46,3 @@ from deduped
 -- on its own if `raw.btc_ticks` is ever swapped for a full, unfiltered load instead,
 -- without needing to touch this file.
 where second in (0, 59)
-  and date > date '2017-08-17'  -- partial day: first row is 04:00:28, hours 0-3 missing

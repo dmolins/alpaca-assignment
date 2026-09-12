@@ -1,12 +1,31 @@
 version: 2
 
 models:
+  - name: int_hourly_coverage
+    description: >
+      One row per (date, hour) that has at least one tick in stg_btc_ticks,
+      flagging whether it has both the buy tick (:00) and sell tick (:59) it
+      needs to be usable. This is the generic, always-current replacement for
+      hardcoding "the first day is partial" or any other known-bad date: any
+      gap in the source data - the partial first day, the multi-hour
+      exchange-outage-shaped gaps found elsewhere in the range, or a gap a
+      future data refresh introduces - shows up here the same way, with no
+      code change required to detect it. int_hourly_prices independently
+      re-derives this same completeness check (see that model's comment for
+      why it isn't joined against this one); this model exists so the gap
+      itself is queryable and testable on its own, not just implicit in what
+      int_hourly_prices silently drops.
+    columns:
+      - name: is_complete
+        data_tests:
+          - not_null
+
   - name: int_hourly_prices
     description: >
       One row per (date, hour) with the buy price (open @ :00) and sell price
-      (close @ :59). date/hour are group-by keys straight from stg_btc_ticks
-      (already tested there), so only the newly-computed columns are tested
-      again here.
+      (close @ :59), for hours int_hourly_coverage marks complete. date/hour
+      are group-by keys straight from stg_btc_ticks (already tested there),
+      so only the newly-computed columns are tested again here.
     columns:
       - name: buy_price
         data_tests:
